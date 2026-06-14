@@ -1,0 +1,135 @@
+# ts-native 配置文件
+# 用于配置 ts-native 编译器的行为和 npm 包兼容策略
+
+# ========================================
+# 项目基础配置
+# ========================================
+[project]
+name = "vue-ts-native"
+entry = "examples/main.ts"
+output = "dist/vue-ts-native.exe"
+target = "native"
+
+# ========================================
+# Shim 机制配置（阶段 1）
+# 为常用 npm 包提供 native shim
+# ========================================
+[shims]
+# 让 import from 'vue' 指向 vue-ts-native
+vue = "vue-ts-native"
+# 其他常用包按需添加
+# lodash = "ts-native-shim-lodash"
+# dayjs = "ts-native-shim-dayjs"
+
+# ========================================
+# node_modules 解析配置（阶段 2）
+# 支持解析和编译纯 JS npm 包
+# ========================================
+[node_modules]
+# 是否启用 node_modules 解析
+enabled = true
+# 是否编译 CJS 模块
+compile_cjs = true
+# 是否编译 ESM 模块
+compile_esm = true
+# 依赖解析策略：strict（严格）/ lenient（宽松）
+resolve_strategy = "strict"
+# 黑名单模块（不编译）
+blacklist = [
+  # "some-incompatible-package"
+]
+
+# ========================================
+# FFI 桥接配置（阶段 3）
+# 用于调用 C++ Addon DLL
+# ========================================
+[ffi_bridges]
+# Yoga 布局引擎（如果是 C++ Addon）
+# yoga-layout = {
+#   dll = "yoga.node",
+#   functions = [
+#     { name = "YGNodeCreate", sig = "" },
+#     { name = "YGNodeCalculateLayout", sig = "vfff" },
+#   ]
+# }
+
+# ========================================
+# QuickJS 引擎配置（阶段 4）
+# 嵌入轻量 JS 引擎作为 fallback
+# ========================================
+[js_engine]
+# 是否启用 QuickJS fallback
+enabled = false
+# fallback 包列表（无法原生化的包）
+fallback = [
+  # "express",
+  # "axios",
+]
+
+# ========================================
+# 编译优化配置
+# ========================================
+[optimize]
+# Tree shaking 策略：none / basic / strict
+tree_shaking = "strict"
+# 常量折叠
+const_folding = true
+# 死代码消除
+dead_code_elimination = true
+# 内联优化
+inlining = true
+
+# ========================================
+# 模块解析配置
+# ========================================
+[module_resolve]
+# 路径别名
+alias = { "@" = "./src" }
+# 扩展名解析顺序
+extensions = [".ts", ".tsx", ".vue", ".js", ".jsx"]
+# 主字段解析顺序
+main_fields = ["module", "main", "browser"]
+
+# ========================================
+# 编译黑名单配置
+# ========================================
+[compile_blacklist]
+# 禁止使用的 DOM 专属特性
+dom_features = [
+  "document",
+  "window",
+  "HTMLElement",
+  "HTMLCanvasElement",
+]
+# 禁止使用的 Web API
+web_apis = [
+  "localStorage",
+  "sessionStorage",
+  "indexedDB",
+]
+
+# ========================================
+# 输出配置
+# ========================================
+[output]
+# 输出格式：exe / lib / dll
+format = "exe"
+# 是否生成调试符号
+debug_symbols = false
+# 是否压缩输出
+minify = true
+# 是否生成 source map
+source_map = false
+
+# ========================================
+# 运行时配置
+# ========================================
+[runtime]
+# 运行时库：tsn_runtime.dll
+runtime_lib = "tsn_runtime.dll"
+# 是否打包为单文件 EXE
+standalone = true
+# 包含的资源文件
+assets = [
+  # "assets/*"
+]

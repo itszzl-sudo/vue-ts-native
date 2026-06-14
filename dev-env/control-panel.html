@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>测试控制面板</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #4fc3f7;
+      margin-bottom: 20px;
+    }
+    .controls {
+      background: #2d2d30;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .control-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      color: #9cdcfe;
+    }
+    input[type="number"], select {
+      width: 200px;
+      padding: 8px;
+      background: #3c3c3c;
+      border: 1px solid #555;
+      color: #d4d4d4;
+      border-radius: 4px;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      background: #0e639c;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #1177bb;
+    }
+    button.danger {
+      background: #c72e0f;
+    }
+    button.danger:hover {
+      background: #e84118;
+    }
+    button.success {
+      background: #16825d;
+    }
+    button.success:hover {
+      background: #1ea474;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      background: #1e1e1e;
+      border-left: 4px solid #4fc3f7;
+      font-family: monospace;
+    }
+    .log {
+      background: #000;
+      border: 2px solid #333;
+      border-radius: 8px;
+      padding: 20px;
+      min-height: 300px;
+      max-height: 600px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+    .log-line { margin: 2px 0; }
+    .log-info { color: #4ec9b0; }
+    .log-success { color: #569cd6; font-weight: bold; }
+    .log-error { color: #f44747; font-weight: bold; }
+    .log-warn { color: #dcdcaa; }
+    iframe {
+      width: 100%;
+      height: 600px;
+      border: 2px solid #333;
+      border-radius: 8px;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎮 测试控制面板</h1>
+    
+    <div class="controls">
+      <div class="control-group">
+        <label>测试页面 URL:</label>
+        <input type="text" id="testUrl" value="http://localhost:3000/test-simple.html" style="width: 500px;">
+      </div>
+      
+      <div class="control-group">
+        <label>重载间隔（秒）:</label>
+        <input type="number" id="interval" value="3" min="1" max="60">
+      </div>
+      
+      <div class="control-group">
+        <button class="success" onclick="startReload()">▶ 开始重载</button>
+        <button class="danger" onclick="stopReload()">⏹ 停止重载</button>
+        <button onclick="reloadOnce()">🔄 重载一次</button>
+        <button onclick="clearLogs()">🗑 清空日志</button>
+      </div>
+      
+      <div class="status" id="status">状态: 未连接</div>
+    </div>
+    
+    <h2>📊 实时日志</h2>
+    <div class="log" id="log"></div>
+    
+    <h2 style="margin-top: 20px;">🖥 测试页面</h2>
+    <iframe id="testFrame" src="about:blank"></iframe>
+  </div>
+
+  <script>
+    let ws = null;
+    let reloadTimer = null;
+    let reloadCount = 0;
+
+    function connect() {
+      ws = new WebSocket('ws://localhost:3001');
+      
+      ws.onopen = () => {
+        log('[WS] 已连接到控制服务器', 'log-success');
+        updateStatus('已连接');
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          handleCommand(data);
+        } catch (error) {
+          log('[WS] 收到: ' + event.data, 'log-info');
+        }
+      };
+      
+      ws.onclose = () => {
+        log('[WS] 连接已断开', 'log-error');
+        updateStatus('已断开，3秒后重连...');
+        setTimeout(connect, 3000);
+      };
+      
+      ws.onerror = (error) => {
+        log('[WS] 错误: ' + error.message, 'log-error');
+      };
+    }
+
+    function handleCommand(data) {
+      if (data.type === 'log') {
+        log(data.message, data.className || 'log-info');
+      } else if (data.type === 'status') {
+        updateStatus(data.message);
+      }
+    }
+
+    function log(message, className = 'log-line') {
+      const logDiv = document.getElementById('log');
+      const div = document.createElement('div');
+      div.className = className;
+      
+      const timestamp = new Date().toLocaleTimeString();
+      div.textContent = `[${timestamp}] ${message}`;
+      
+      logDiv.appendChild(div);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function updateStatus(message) {
+      document.getElementById('status').textContent = '状态: ' + message;
+    }
+
+    function startReload() {
+      if (reloadTimer) {
+        log('⚠ 重载已在运行', 'log-warn');
+        return;
+      }
+      
+      const interval = parseInt(document.getElementById('interval').value) * 1000;
+      reloadCount = 0;
+      
+      log('▶ 开始自动重载（间隔: ' + interval/1000 + '秒）', 'log-success');
+      updateStatus('重载中 (0 次)');
+      
+      reloadOnce();
+      reloadTimer = setInterval(() => {
+        reloadCount++;
+        updateStatus('重载中 (' + reloadCount + ' 次)');
+        reloadOnce();
+      }, interval);
+    }
+
+    function stopReload() {
+      if (reloadTimer) {
+        clearInterval(reloadTimer);
+        reloadTimer = null;
+        log('⏹ 已停止重载（共 ' + reloadCount + ' 次）', 'log-success');
+        updateStatus('已停止');
+      } else {
+        log('⚠ 重载未在运行', 'log-warn');
+      }
+    }
+
+    function reloadOnce() {
+      const testUrl = document.getElementById('testUrl').value;
+      const iframe = document.getElementById('testFrame');
+      
+      log('🔄 重载: ' + testUrl, 'log-info');
+      iframe.src = testUrl;
+      
+      // 通知 WebSocket 客户端
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'reload',
+          url: testUrl,
+          count: reloadCount
+        }));
+      }
+    }
+
+    function clearLogs() {
+      document.getElementById('log').innerHTML = '';
+      log('🗑 日志已清空', 'log-info');
+    }
+
+    // 自动连接
+    connect();
+  </script>
+</body>
+</html>

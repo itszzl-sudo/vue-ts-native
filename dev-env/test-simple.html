@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Yoga + Canvas2D 测试</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Courier New', monospace;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 20px;
+    }
+    #terminal {
+      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+      background: #000;
+      border: 2px solid #333;
+      border-radius: 8px;
+      padding: 20px;
+      min-height: 400px;
+      white-space: pre-wrap;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .log-line { margin: 2px 0; }
+    .log-info { color: #4ec9b0; }
+    .log-success { color: #569cd6; font-weight: bold; }
+    .log-error { color: #f44747; font-weight: bold; }
+    .log-tree { color: #ce9178; }
+    .separator { color: #808080; }
+    canvas {
+      display: block;
+      margin: 20px auto;
+      border: 2px solid #333;
+      background: #f5f5f5;
+    }
+  </style>
+</head>
+<body>
+  <div id="terminal"></div>
+  <canvas id="canvas" width="760" height="560"></canvas>
+
+  <script type="module">
+    const terminal = document.getElementById('terminal');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    function log(msg, className = '') {
+      const line = document.createElement('div');
+      line.className = 'log-line ' + className;
+      line.textContent = msg;
+      terminal.appendChild(line);
+      terminal.scrollTop = terminal.scrollHeight;
+      console.log('[PAGE] ' + msg);
+    }
+
+    // WebSocket 连接
+    function connectWebSocket() {
+      const ws = new WebSocket('ws://localhost:3001');
+      ws.onopen = () => log('[WS] 已连接到控制服务器', 'log-success');
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.type === 'reload') location.reload();
+      };
+      ws.onerror = () => log('[WS] 连接失败', 'log-error');
+      ws.onclose = () => setTimeout(connectWebSocket, 3000);
+    }
+    connectWebSocket();
+
+    // 加载 Yoga
+    async function loadYoga() {
+      log('[1/4] 加载 Yoga WASM...', 'log-info');
+      const wasmResponse = await fetch('/yoga.wasm');
+      const yogaModule = await import('yoga-wasm-web');
+      const yoga = await yogaModule.initStreaming(wasmResponse);
+      log('[1/4] ✅ Yoga WASM 加载成功', 'log-success');
+      log('  - DIRECTION_LTR:', yoga.DIRECTION_LTR, 'log-tree');
+      log('  - FLEX_DIRECTION_COLUMN:', yoga.FLEX_DIRECTION_COLUMN, 'log-tree');
+      log('');
+      return yoga;
+    }
+
+    // 测试函数
+    async function test() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const scenario = urlParams.get('scenario') || 'column';
+      
+      log('========================================', 'separator');
+      log('开始测试 Yoga + Canvas2D', 'log-info');
+      log('场景: ' + scenario, 'log-info');
+      log('========================================', 'separator');
+      log('');
+
+      try {
+        const yoga = await loadYoga();
+        log('[2/4] 创建布局树...', 'log-info');
+
+        let root;
+        let canvasWidth, canvasHeight;
+
+        // 文本测量上下文（供 measure / wrap-text 场景使用）
+        const measureCanvas = document.createElement('canvas');
+        const measureCtx = measureCanvas.getContext('2d');
+
+        function createTextNode(text, fontSize, fontWeight, maxWidth) {
+          const node = yoga.Node.create();
+          node._text = text;
+          node._fontSize = fontSize || 14;
+          node._fontWeight = fontWeight || 'normal';
+          if (maxWidth) node.setMaxWidth(maxWidth);
+
+          node.setMeasureFunc(function(width, widthMode, height, heightMode) {
+            measureCtx.font = (fontWeight || 'normal') + ' ' + (fontSize || 14) + 'px sans-serif';
+            const metrics = measureCtx.measureText(text);
+            const textWidth = Math.ceil(metrics.width);
+            const textHeight = Math.ceil(fontSize || 14) * 1.4;
+            let w, h;
+            if (widthMode === 0) w = textWidth;
+            else if (widthMode === 1) w = width;
+            else w = Math.min(textWidth, width);
+            if (heightMode === 0) h = textHeight;
+            else if (heightMode === 1) h = height;
+            else h = Math.min(textHeight, height);
+            if (widthMode === 2 && textWidth > width) {
+              const lines = Math.ceil(textWidth / width);
+              h = Math.ceil(textHeight * lines);
+            }
+            log('    [measure] "' + text.substring(0, 12) + '..." => ' + w + '\u00d7' + h, 'log-tree');
+            return { width: w, height: h };
+          });
+          return node;
+        }
+
+        if (scenario === 'column') {
+          // 基础 Column 布局
+          root = yoga.Node.create();
+          root.setWidth(760);
+          root.setHeight(560);
+          root.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          root.setPadding(yoga.EDGE_ALL, 20);
+          root.setGap(yoga.GUTTER_ALL, 10);
+          log('  - 场景: 基础 Column 布局', 'log-tree');
+          canvasWidth = 760; canvasHeight = 560;
+
+          const c0 = yoga.Node.create();
+          c0.setWidth(720); c0.setHeight(100);
+          root.insertChild(c0, 0);
+          log('    - c0: 720×100', 'log-tree');
+
+          const c1 = yoga.Node.create();
+          c1.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          c1.setGap(yoga.GUTTER_ALL, 10);
+          root.insertChild(c1, 1);
+          log('    - c1: ROW', 'log-tree');
+
+          const c1_0 = yoga.Node.create();
+          c1_0.setHeight(150); c1_0.setFlex(1);
+          c1.insertChild(c1_0, 0);
+          log('      - c1_0: h=150, flex=1', 'log-tree');
+
+          const c1_1 = yoga.Node.create();
+          c1_1.setHeight(150); c1_1.setFlex(2);
+          c1.insertChild(c1_1, 1);
+          log('      - c1_1: h=150, flex=2', 'log-tree');
+
+          const c2 = yoga.Node.create();
+          c2.setFlex(1);
+          c2.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          c2.setGap(yoga.GUTTER_ALL, 5);
+          root.insertChild(c2, 2);
+          log('    - c2: flex=1, COLUMN', 'log-tree');
+
+          const c2_0 = yoga.Node.create();
+          c2_0.setHeight(50); c2_0.setWidthPercent(100);
+          c2.insertChild(c2_0, 0);
+          log('      - c2_0: h=50', 'log-tree');
+
+          const c2_1 = yoga.Node.create();
+          c2_1.setFlex(1);
+          c2.insertChild(c2_1, 1);
+          log('      - c2_1: flex=1', 'log-tree');
+
+        } else if (scenario === 'row') {
+          // 嵌套 Row 布局
+          root = yoga.Node.create();
+          root.setWidth(800);
+          root.setHeight(600);
+          root.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          root.setPadding(yoga.EDGE_ALL, 30);
+          root.setGap(yoga.GUTTER_ALL, 15);
+          log('  - 场景: 嵌套 Row 布局', 'log-tree');
+          canvasWidth = 800; canvasHeight = 600;
+
+          const c0 = yoga.Node.create();
+          c0.setFlex(1);
+          c0.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          c0.setGap(yoga.GUTTER_ALL, 10);
+          root.insertChild(c0, 0);
+          log('    - c0: flex=1, COLUMN', 'log-tree');
+
+          const c0_0 = yoga.Node.create();
+          c0_0.setHeight(200);
+          c0.insertChild(c0_0, 0);
+          log('      - c0_0: h=200', 'log-tree');
+
+          const c0_1 = yoga.Node.create();
+          c0_1.setFlex(1);
+          c0.insertChild(c0_1, 1);
+          log('      - c0_1: flex=1', 'log-tree');
+
+          const c1 = yoga.Node.create();
+          c1.setFlex(2);
+          c1.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          c1.setGap(yoga.GUTTER_ALL, 20);
+          root.insertChild(c1, 1);
+          log('    - c1: flex=2, COLUMN', 'log-tree');
+
+          const c1_0 = yoga.Node.create();
+          c1_0.setHeight(100);
+          c1.insertChild(c1_0, 0);
+          log('      - c1_0: h=100', 'log-tree');
+
+          const c1_1 = yoga.Node.create();
+          c1_1.setHeight(150);
+          c1.insertChild(c1_1, 1);
+          log('      - c1_1: h=150', 'log-tree');
+
+          const c1_2 = yoga.Node.create();
+          c1_2.setFlex(1);
+          c1.insertChild(c1_2, 2);
+          log('      - c1_2: flex=1', 'log-tree');
+
+        } else if (scenario === 'absolute') {
+          // 绝对定位测试
+          root = yoga.Node.create();
+          root.setWidth(600);
+          root.setHeight(400);
+          log('  - 场景: 绝对定位测试', 'log-tree');
+          canvasWidth = 600; canvasHeight = 400;
+
+          const c0 = yoga.Node.create();
+          c0.setWidth(200); c0.setHeight(200);
+          c0.setPositionType(yoga.POSITION_TYPE_ABSOLUTE);
+          c0.setPosition(yoga.EDGE_LEFT, 50);
+          c0.setPosition(yoga.EDGE_TOP, 50);
+          root.insertChild(c0, 0);
+          log('    - c0: 200×200, absolute, left=50, top=50', 'log-tree');
+
+          const c1 = yoga.Node.create();
+          c1.setWidth(150); c1.setHeight(150);
+          c1.setPositionType(yoga.POSITION_TYPE_ABSOLUTE);
+          c1.setPosition(yoga.EDGE_RIGHT, 30);
+          c1.setPosition(yoga.EDGE_BOTTOM, 30);
+          root.insertChild(c1, 1);
+          log('    - c1: 150×150, absolute, right=30, bottom=30', 'log-tree');
+
+        } else if (scenario === 'percent') {
+          // 百分比 + flex 混合
+          root = yoga.Node.create();
+          root.setWidth(1000);
+          root.setHeight(800);
+          root.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          log('  - 场景: 百分比 + flex 混合', 'log-tree');
+          canvasWidth = 1000; canvasHeight = 800;
+
+          const c0 = yoga.Node.create();
+          c0.setHeight(200); c0.setWidthPercent(50);
+          root.insertChild(c0, 0);
+          log('    - c0: h=200, width=50%', 'log-tree');
+
+          const c1 = yoga.Node.create();
+          c1.setHeight(300); c1.setWidthPercent(75);
+          root.insertChild(c1, 1);
+          log('    - c1: h=300, width=75%', 'log-tree');
+
+          const c2 = yoga.Node.create();
+          c2.setFlex(1);
+          c2.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          root.insertChild(c2, 2);
+          log('    - c2: flex=1, ROW', 'log-tree');
+
+          const c2_0 = yoga.Node.create();
+          c2_0.setFlex(1);
+          c2.insertChild(c2_0, 0);
+          log('      - c2_0: flex=1', 'log-tree');
+
+          const c2_1 = yoga.Node.create();
+          c2_1.setFlex(1);
+          c2.insertChild(c2_1, 1);
+          log('      - c2_1: flex=1', 'log-tree');
+
+          const c2_2 = yoga.Node.create();
+          c2_2.setFlex(1);
+          c2.insertChild(c2_2, 2);
+          log('      - c2_2: flex=1', 'log-tree');
+
+        } else if (scenario === 'wrap') {
+          // flex-wrap + align/justify
+          root = yoga.Node.create();
+          root.setWidth(600);
+          root.setHeight(500);
+          root.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          root.setFlexWrap(yoga.WRAP_WRAP);
+          root.setAlignContent(yoga.ALIGN_FLEX_START);
+          root.setGap(yoga.GUTTER_ALL, 10);
+          root.setPadding(yoga.EDGE_ALL, 15);
+          log('  - 场景: flex-wrap + align', 'log-tree');
+          canvasWidth = 600; canvasHeight = 500;
+
+          for (let i = 0; i < 8; i++) {
+            const child = yoga.Node.create();
+            child.setWidth(130);
+            child.setHeight(80 + i * 10);
+            root.insertChild(child, i);
+            log('    - item' + i + ': 130×' + (80 + i * 10), 'log-tree');
+          }
+
+        } else if (scenario === 'align') {
+          // align-items + justify-content
+          root = yoga.Node.create();
+          root.setWidth(700);
+          root.setHeight(500);
+          root.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          root.setGap(yoga.GUTTER_ALL, 15);
+          root.setPadding(yoga.EDGE_ALL, 20);
+          log('  - 场景: align + justify', 'log-tree');
+          canvasWidth = 700; canvasHeight = 500;
+
+          // justify-content: center
+          const row1 = yoga.Node.create();
+          row1.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          row1.setJustifyContent(yoga.JUSTIFY_CENTER);
+          row1.setGap(yoga.GUTTER_ALL, 10);
+          row1.setHeight(80);
+          root.insertChild(row1, 0);
+          log('    - row1: justify=center', 'log-tree');
+
+          for (let i = 0; i < 3; i++) {
+            const c = yoga.Node.create();
+            c.setWidth(100); c.setHeight(60);
+            row1.insertChild(c, i);
+            log('      - item: 100×60', 'log-tree');
+          }
+
+          // align-items: flex-end
+          const row2 = yoga.Node.create();
+          row2.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          row2.setAlignItems(yoga.ALIGN_FLEX_END);
+          row2.setGap(yoga.GUTTER_ALL, 10);
+          row2.setHeight(120);
+          root.insertChild(row2, 1);
+          log('    - row2: align=flex-end', 'log-tree');
+
+          const heights = [40, 80, 60];
+          for (let i = 0; i < 3; i++) {
+            const c = yoga.Node.create();
+            c.setWidth(100); c.setHeight(heights[i]);
+            row2.insertChild(c, i);
+            log('      - item: 100×' + heights[i], 'log-tree');
+          }
+
+          // space-between
+          const row3 = yoga.Node.create();
+          row3.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          row3.setJustifyContent(yoga.JUSTIFY_SPACE_BETWEEN);
+          row3.setHeight(60);
+          root.insertChild(row3, 2);
+          log('    - row3: justify=space-between', 'log-tree');
+
+          for (let i = 0; i < 4; i++) {
+            const c = yoga.Node.create();
+            c.setWidth(80); c.setHeight(50);
+            row3.insertChild(c, i);
+            log('      - item: 80×50', 'log-tree');
+          }
+
+        } else if (scenario === 'border') {
+          // border + margin
+          root = yoga.Node.create();
+          root.setWidth(600);
+          root.setHeight(450);
+          root.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          root.setPadding(yoga.EDGE_ALL, 20);
+          root.setGap(yoga.GUTTER_ALL, 15);
+          log('  - 场景: border + margin', 'log-tree');
+          canvasWidth = 600; canvasHeight = 450;
+
+          const c0 = yoga.Node.create();
+          c0.setHeight(100);
+          c0.setBorder(yoga.EDGE_ALL, 3);
+          root.insertChild(c0, 0);
+          log('    - c0: h=100, border=3', 'log-tree');
+
+          const c1 = yoga.Node.create();
+          c1.setHeight(100);
+          c1.setMargin(yoga.EDGE_ALL, 20);
+          c1.setBorder(yoga.EDGE_ALL, 5);
+          root.insertChild(c1, 1);
+          log('    - c1: h=100, margin=20, border=5', 'log-tree');
+
+          const c2 = yoga.Node.create();
+          c2.setFlex(1);
+          c2.setBorder(yoga.EDGE_LEFT, 4);
+          c2.setBorder(yoga.EDGE_TOP, 2);
+          c2.setMargin(yoga.EDGE_LEFT, 30);
+          root.insertChild(c2, 2);
+          log('    - c2: flex=1, border-left=4, border-top=2, margin-left=30', 'log-tree');
+
+        } else if (scenario === 'nested') {
+          // 多层嵌套混合
+          root = yoga.Node.create();
+          root.setWidth(800);
+          root.setHeight(700);
+          root.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          root.setPadding(yoga.EDGE_ALL, 15);
+          root.setGap(yoga.GUTTER_ALL, 10);
+          log('  - 场景: 多层嵌套混合', 'log-tree');
+          canvasWidth = 800; canvasHeight = 700;
+
+          // header
+          const header = yoga.Node.create();
+          header.setHeight(60);
+          header.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          header.setAlignItems(yoga.ALIGN_CENTER);
+          header.setGap(yoga.GUTTER_ALL, 10);
+          header.setPadding(yoga.EDGE_HORIZONTAL, 15);
+          root.insertChild(header, 0);
+          log('    - header: h=60, ROW, align=center', 'log-tree');
+
+          const logo = yoga.Node.create();
+          logo.setWidth(40); logo.setHeight(40);
+          header.insertChild(logo, 0);
+          log('      - logo: 40×40', 'log-tree');
+
+          const title = yoga.Node.create();
+          title.setFlex(1); title.setHeight(30);
+          header.insertChild(title, 1);
+          log('      - title: flex=1, h=30', 'log-tree');
+
+          const nav = yoga.Node.create();
+          nav.setWidth(200); nav.setHeight(30);
+          header.insertChild(nav, 2);
+          log('      - nav: 200×30', 'log-tree');
+
+          // body: sidebar + main
+          const body = yoga.Node.create();
+          body.setFlex(1);
+          body.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          body.setGap(yoga.GUTTER_ALL, 10);
+          root.insertChild(body, 1);
+          log('    - body: flex=1, ROW', 'log-tree');
+
+          const sidebar = yoga.Node.create();
+          sidebar.setWidth(180);
+          sidebar.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          sidebar.setGap(yoga.GUTTER_ALL, 8);
+          sidebar.setPadding(yoga.EDGE_ALL, 10);
+          body.insertChild(sidebar, 0);
+          log('      - sidebar: w=180, COLUMN', 'log-tree');
+
+          for (let i = 0; i < 4; i++) {
+            const item = yoga.Node.create();
+            item.setHeight(40);
+            sidebar.insertChild(item, i);
+            log('        - menu' + i + ': h=40', 'log-tree');
+          }
+
+          const main = yoga.Node.create();
+          main.setFlex(1);
+          main.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          main.setGap(yoga.GUTTER_ALL, 10);
+          main.setPadding(yoga.EDGE_ALL, 10);
+          body.insertChild(main, 1);
+          log('      - main: flex=1, COLUMN', 'log-tree');
+
+          const cardRow = yoga.Node.create();
+          cardRow.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          cardRow.setGap(yoga.GUTTER_ALL, 10);
+          cardRow.setHeight(120);
+          main.insertChild(cardRow, 0);
+          log('        - cardRow: h=120, ROW', 'log-tree');
+
+          for (let i = 0; i < 3; i++) {
+            const card = yoga.Node.create();
+            card.setFlex(1);
+            card.setBorder(yoga.EDGE_ALL, 1);
+            card.setPadding(yoga.EDGE_ALL, 8);
+            cardRow.insertChild(card, i);
+            log('          - card' + i + ': flex=1, border=1', 'log-tree');
+          }
+
+          const content = yoga.Node.create();
+          content.setFlex(1);
+          main.insertChild(content, 1);
+          log('        - content: flex=1', 'log-tree');
+
+          // footer
+          const footer = yoga.Node.create();
+          footer.setHeight(40);
+          footer.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          footer.setJustifyContent(yoga.JUSTIFY_SPACE_BETWEEN);
+          footer.setAlignItems(yoga.ALIGN_CENTER);
+          footer.setPadding(yoga.EDGE_HORIZONTAL, 15);
+          root.insertChild(footer, 2);
+          log('    - footer: h=40, ROW, justify=space-between', 'log-tree');
+
+          const footerLeft = yoga.Node.create();
+          footerLeft.setWidth(150); footerLeft.setHeight(20);
+          footer.insertChild(footerLeft, 0);
+          log('      - footerLeft: 150×20', 'log-tree');
+
+          const footerRight = yoga.Node.create();
+          footerRight.setWidth(100); footerRight.setHeight(20);
+          footer.insertChild(footerRight, 1);
+          log('      - footerRight: 100×20', 'log-tree');
+
+        } else if (scenario === 'decor') {
+          // 装饰: border-radius, opacity, overflow, shadow(模拟)
+          root = yoga.Node.create();
+          root.setWidth(700);
+          root.setHeight(550);
+          root.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          root.setPadding(yoga.EDGE_ALL, 20);
+          root.setGap(yoga.GUTTER_ALL, 15);
+          log('  - 场景: 装饰属性', 'log-tree');
+          canvasWidth = 700; canvasHeight = 550;
+
+          // 圆角矩形
+          const r0 = yoga.Node.create();
+          r0.setHeight(100);
+          r0.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          r0.setGap(yoga.GUTTER_ALL, 15);
+          root.insertChild(r0, 0);
+          log('    - r0: ROW, h=100, 圆角测试', 'log-tree');
+
+          const radii = [0, 8, 20, 50];
+          for (let i = 0; i < 4; i++) {
+            const c = yoga.Node.create();
+            c.setFlex(1); c.setHeight(100);
+            c._borderRadius = radii[i];
+            r0.insertChild(c, i);
+            log('      - radius=' + radii[i], 'log-tree');
+          }
+
+          // 嵌套边框 + 圆角
+          const r1 = yoga.Node.create();
+          r1.setHeight(150);
+          r1.setPadding(yoga.EDGE_ALL, 15);
+          r1.setBorder(yoga.EDGE_ALL, 3);
+          r1._borderRadius = 12;
+          root.insertChild(r1, 1);
+          log('    - r1: h=150, border=3, radius=12, padding=15', 'log-tree');
+
+          const r1_inner = yoga.Node.create();
+          r1_inner.setFlex(1);
+          r1_inner.setHeight(100);
+          r1_inner.setBorder(yoga.EDGE_ALL, 2);
+          r1_inner._borderRadius = 8;
+          r1.insertChild(r1_inner, 0);
+          log('      - inner: border=2, radius=8', 'log-tree');
+
+          // overflow hidden 模拟
+          const r2 = yoga.Node.create();
+          r2.setHeight(80);
+          r2.setWidth(300);
+          r2.setBorder(yoga.EDGE_ALL, 1);
+          r2._overflow = 'hidden';
+          root.insertChild(r2, 2);
+          log('    - r2: 300×80, border=1, overflow=hidden', 'log-tree');
+
+          // 多层边框
+          const r3 = yoga.Node.create();
+          r3.setFlex(1);
+          r3.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          r3.setGap(yoga.GUTTER_ALL, 10);
+          root.insertChild(r3, 3);
+          log('    - r3: flex=1, ROW, 多层边框', 'log-tree');
+
+          for (let i = 0; i < 3; i++) {
+            const c = yoga.Node.create();
+            c.setFlex(1);
+            c.setBorder(yoga.EDGE_ALL, i + 1);
+            c._borderRadius = (i + 1) * 5;
+            r3.insertChild(c, i);
+            log('      - border=' + (i+1) + ', radius=' + ((i+1)*5), 'log-tree');
+          }
+
+        } else if (scenario === 'text') {
+          // 字体: text 节点, 不同尺寸/粗细
+          root = yoga.Node.create();
+          root.setWidth(700);
+          root.setHeight(600);
+          root.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          root.setPadding(yoga.EDGE_ALL, 20);
+          root.setGap(yoga.GUTTER_ALL, 12);
+          log('  - 场景: 字体/文本', 'log-tree');
+          canvasWidth = 700; canvasHeight = 600;
+
+          // 标题行
+          const title = yoga.Node.create();
+          title.setHeight(50);
+          title.setPadding(yoga.EDGE_ALL, 10);
+          title._text = '标题文字 36px Bold';
+          title._fontSize = 36;
+          title._fontWeight = 'bold';
+          title._backgroundColor = '#1e88e5';
+          root.insertChild(title, 0);
+          log('    - title: 36px bold', 'log-tree');
+
+          // 正文
+          const body1 = yoga.Node.create();
+          body1.setHeight(30);
+          body1.setPadding(yoga.EDGE_ALL, 5);
+          body1._text = '正文 16px Regular';
+          body1._fontSize = 16;
+          root.insertChild(body1, 1);
+          log('    - body1: 16px regular', 'log-tree');
+
+          const body2 = yoga.Node.create();
+          body2.setHeight(30);
+          body2.setPadding(yoga.EDGE_ALL, 5);
+          body2._text = '正文 14px Light';
+          body2._fontSize = 14;
+          body2._fontWeight = 'light';
+          root.insertChild(body2, 2);
+          log('    - body2: 14px light', 'log-tree');
+
+          // 不同字号行
+          const sizeRow = yoga.Node.create();
+          sizeRow.setHeight(60);
+          sizeRow.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          sizeRow.setAlignItems(yoga.ALIGN_FLEX_END);
+          sizeRow.setGap(yoga.GUTTER_ALL, 15);
+          root.insertChild(sizeRow, 3);
+          log('    - sizeRow: h=60, ROW, align=flex-end', 'log-tree');
+
+          const sizes = [12, 18, 24, 32];
+          for (let i = 0; i < 4; i++) {
+            const c = yoga.Node.create();
+            c.setHeight(sizes[i] + 10);
+            c._text = sizes[i] + 'px';
+            c._fontSize = sizes[i];
+            sizeRow.insertChild(c, i);
+            log('      - ' + sizes[i] + 'px', 'log-tree');
+          }
+
+          // 带背景的文字块
+          const card = yoga.Node.create();
+          card.setHeight(120);
+          card.setPadding(yoga.EDGE_ALL, 15);
+          card.setBorder(yoga.EDGE_ALL, 1);
+          card._borderRadius = 8;
+          card._backgroundColor = '#e3f2fd';
+          root.insertChild(card, 4);
+          log('    - card: h=120, border=1, radius=8, bg=#e3f2fd', 'log-tree');
+
+          const cardTitle = yoga.Node.create();
+          cardTitle.setHeight(30);
+          cardTitle._text = '卡片标题';
+          cardTitle._fontSize = 20;
+          cardTitle._fontWeight = 'bold';
+          card.insertChild(cardTitle, 0);
+          log('      - cardTitle: 20px bold', 'log-tree');
+
+          const cardBody = yoga.Node.create();
+          cardBody.setFlex(1);
+          cardBody._text = '卡片内容区域，包含描述文字。';
+          cardBody._fontSize = 14;
+          card.insertChild(cardBody, 1);
+          log('      - cardBody: 14px', 'log-tree');
+
+          // 小字 + 链接样式
+          const footer = yoga.Node.create();
+          footer.setFlex(1);
+          footer.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          footer.setGap(yoga.GUTTER_ALL, 20);
+          footer.setAlignItems(yoga.ALIGN_CENTER);
+          root.insertChild(footer, 5);
+          log('    - footer: flex=1, ROW', 'log-tree');
+
+          const smallText = yoga.Node.create();
+          smallText.setHeight(20);
+          smallText._text = '小字 10px';
+          smallText._fontSize = 10;
+          footer.insertChild(smallText, 0);
+          log('      - small: 10px', 'log-tree');
+
+          const linkText = yoga.Node.create();
+          linkText.setHeight(20);
+          linkText._text = '链接样式';
+          linkText._fontSize = 14;
+          linkText._color = '#1e88e5';
+          footer.insertChild(linkText, 1);
+          log('      - link: 14px, color=#1e88e5', 'log-tree');
+
+        } else if (scenario === 'measure') {
+          // measureFunc: 文本自动尺寸计算
+          root = yoga.Node.create();
+          root.setWidth(700);
+          root.setHeight(600);
+          root.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          root.setPadding(yoga.EDGE_ALL, 20);
+          root.setGap(yoga.GUTTER_ALL, 12);
+          log('  - 场景: measureFunc 文本尺寸', 'log-tree');
+          canvasWidth = 700; canvasHeight = 600;
+
+          // 短文本：自动宽度
+          const short = createTextNode('短文本', 16, 'normal');
+          root.insertChild(short, 0);
+          log('    - short: 自动宽度 "短文本"', 'log-tree');
+
+          // 长文本：限制最大宽度，自动换行
+          const long = createTextNode('这是一段很长的文本内容，需要自动计算宽度和高度，并且可能会换行显示。', 14, 'normal', 400);
+          root.insertChild(long, 1);
+          log('    - long: maxWidth=400, 自动换行', 'log-tree');
+
+          // 标题：大号字体
+          const heading = createTextNode('标题文字 Heading', 28, 'bold');
+          root.insertChild(heading, 2);
+          log('    - heading: 28px bold', 'log-tree');
+
+          // 行布局中的多个文本
+          const row = yoga.Node.create();
+          row.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          row.setGap(yoga.GUTTER_ALL, 15);
+          row.setAlignItems(yoga.ALIGN_CENTER);
+          row.setHeight(40);
+          root.insertChild(row, 3);
+          log('    - row: ROW, h=40, align=center', 'log-tree');
+
+          const label = createTextNode('标签:', 14, 'bold');
+          row.insertChild(label, 0);
+          log('      - label: "标签:" bold', 'log-tree');
+
+          const value = createTextNode('这是自动测量的值文本', 14, 'normal');
+          row.insertChild(value, 1);
+          log('      - value: "这是自动测量的值文本"', 'log-tree');
+
+          // 卡片中的文本
+          const card = yoga.Node.create();
+          card.setWidth(350);
+          card.setPadding(yoga.EDGE_ALL, 15);
+          card.setBorder(yoga.EDGE_ALL, 1);
+          card._borderRadius = 8;
+          card._backgroundColor = '#e8f5e9';
+          root.insertChild(card, 4);
+          log('    - card: w=350, border=1, radius=8', 'log-tree');
+
+          const cardTitle = createTextNode('卡片标题', 18, 'bold');
+          card.insertChild(cardTitle, 0);
+          log('      - cardTitle: 18px bold', 'log-tree');
+
+          const cardDesc = createTextNode('这是卡片描述文字，使用 measureFunc 自动计算实际尺寸。', 13, 'normal', 310);
+          card.insertChild(cardDesc, 1);
+          log('      - cardDesc: 13px, maxWidth=310', 'log-tree');
+
+          // flex 容器中的自动尺寸文本
+          const flexRow = yoga.Node.create();
+          flexRow.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          flexRow.setGap(yoga.GUTTER_ALL, 10);
+          flexRow.setFlex(1);
+          root.insertChild(flexRow, 5);
+          log('    - flexRow: flex=1, ROW', 'log-tree');
+
+          const items = ['短', '中等长度文本', '这是一段比较长的文本内容'];
+          for (let i = 0; i < 3; i++) {
+            const item = createTextNode(items[i], 12, 'normal');
+            item.setPadding(yoga.EDGE_ALL, 6);
+            item._backgroundColor = ['#bbdefb', '#c8e6c9', '#ffccbc'][i];
+            item._borderRadius = 4;
+            flexRow.insertChild(item, i);
+            log('      - item' + i + ': "' + items[i] + '"', 'log-tree');
+          }
+        } else if (scenario === 'wrap-text') {
+          root = yoga.Node.create();
+          root.setWidth(800);
+          root.setHeight(700);
+          root.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
+          canvasWidth = 800; canvasHeight = 700;
+          log('  场景: 文本换行测试', 'log-info');
+          root.setPadding(yoga.EDGE_ALL, 15);
+          root.setGap(yoga.GUTTER_ALL, 12);
+          root._backgroundColor = '#f5f5f5';
+
+          // 1) 窄容器长文本 - 强制多行换行
+          const narrowBox = yoga.Node.create();
+          narrowBox.setWidth(150);
+          narrowBox.setPadding(yoga.EDGE_ALL, 10);
+          narrowBox.setBorder(yoga.EDGE_ALL, 1);
+          narrowBox._backgroundColor = '#e3f2fd';
+          narrowBox._borderRadius = 6;
+          root.insertChild(narrowBox, 0);
+          log('    - narrowBox: w=150, padding=10, border=1', 'log-tree');
+
+          const longText = createTextNode('这是一段很长的文本内容，需要在窄容器中自动换行显示多行效果', 14, 'normal', 128);
+          narrowBox.insertChild(longText, 0);
+          log('      - longText: 14px, maxWidth=128', 'log-tree');
+
+          // 2) 宽容器短文本 - 单行不换行
+          const wideBox = yoga.Node.create();
+          wideBox.setWidth(400);
+          wideBox.setPadding(yoga.EDGE_ALL, 10);
+          wideBox.setBorder(yoga.EDGE_ALL, 1);
+          wideBox._backgroundColor = '#e8f5e9';
+          wideBox._borderRadius = 6;
+          root.insertChild(wideBox, 1);
+          log('    - wideBox: w=400, padding=10', 'log-tree');
+
+          const shortText = createTextNode('短文本不换行', 16, 'bold');
+          wideBox.insertChild(shortText, 0);
+          log('      - shortText: "短文本不换行" 16px bold', 'log-tree');
+
+          // 3) 中英文混合换行
+          const mixedBox = yoga.Node.create();
+          mixedBox.setWidth(250);
+          mixedBox.setPadding(yoga.EDGE_ALL, 10);
+          mixedBox.setBorder(yoga.EDGE_ALL, 1);
+          mixedBox._backgroundColor = '#fff3e0';
+          mixedBox._borderRadius = 6;
+          root.insertChild(mixedBox, 2);
+          log('    - mixedBox: w=250, padding=10', 'log-tree');
+
+          const mixedText = createTextNode('Hello World 你好世界 This is a mixed text 中英文混排测试', 13, 'normal', 228);
+          mixedBox.insertChild(mixedText, 0);
+          log('      - mixedText: 中英文混合, maxWidth=228', 'log-tree');
+
+          // 4) 不同 maxWidth 对比
+          const compareRow = yoga.Node.create();
+          compareRow.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
+          compareRow.setGap(yoga.GUTTER_ALL, 10);
+          root.insertChild(compareRow, 3);
+          log('    - compareRow: ROW, gap=10', 'log-tree');
+
+          const widths = [100, 200, 350];
+          const sameText = '这段相同的文本在不同宽度约束下会呈现不同的换行效果';
+          for (let i = 0; i < 3; i++) {
+            const box = yoga.Node.create();
+            box.setWidth(widths[i]);
+            box.setPadding(yoga.EDGE_ALL, 8);
+            box.setBorder(yoga.EDGE_ALL, 1);
+            box._backgroundColor = ['#fce4ec', '#e1f5fe', '#f1f8e9'][i];
+            box._borderRadius = 4;
+            compareRow.insertChild(box, i);
+            log('      - box' + i + ': w=' + widths[i], 'log-tree');
+
+            const txt = createTextNode(sameText, 12, 'normal', widths[i] - 18);
+            box.insertChild(txt, 0);
+            log('        - text: maxWidth=' + (widths[i] - 18), 'log-tree');
+          }
+
+          // 5) 大字号换行
+          const bigBox = yoga.Node.create();
+          bigBox.setWidth(300);
+          bigBox.setPadding(yoga.EDGE_ALL, 12);
+          bigBox.setBorder(yoga.EDGE_ALL, 2);
+          bigBox._backgroundColor = '#ede7f6';
+          bigBox._borderRadius = 8;
+          root.insertChild(bigBox, 4);
+          log('    - bigBox: w=300, border=2', 'log-tree');
+
+          const bigText = createTextNode('大字号文本换行测试效果', 24, 'bold', 272);
+          bigBox.insertChild(bigText, 0);
+          log('      - bigText: 24px bold, maxWidth=272', 'log-tree');
+        }
+
+        log('[2/4] ✅ 布局树创建成功', 'log-success');
+        log('');
+
+        log('[3/4] 计算布局...', 'log-info');
+        root.calculateLayout(canvasWidth, canvasHeight, yoga.DIRECTION_LTR);
+        log('[3/4] ✅ 布局计算完成', 'log-success');
+        log('');
+
+        log('=== 布局结果 ===', 'log-info');
+        printLayoutTree(root, 'root', 0);
+        log('');
+
+        log('=== Canvas 渲染 ===', 'log-info');
+        renderToCanvas(root);
+        log('✅ Canvas 渲染完成', 'log-success');
+        log('');
+        log('=== 测试完成 ===', 'log-success');
+
+      } catch (error) {
+        log('❌ 测试失败: ' + error.message, 'log-error');
+        log(error.stack, 'log-error');
+      }
+    }
+
+    function printLayoutTree(node, name, depth) {
+      const layout = node.getComputedLayout();
+      const indent = '  '.repeat(depth);
+      log(indent + name, 'log-tree');
+      log(indent + '  尺寸: ' + layout.width + ' × ' + layout.height, 'log-tree');
+      log(indent + '  位置: (' + layout.left + ', ' + layout.top + ')', 'log-tree');
+      const count = node.getChildCount();
+      if (count > 0) {
+        log(indent + '  子节点: ' + count + ' 个', 'log-tree');
+        for (let i = 0; i < count; i++) {
+          printLayoutTree(node.getChild(i), 'child[' + i + ']', depth + 1);
+        }
+      }
+    }
+
+    function renderToCanvas(node, offsetX, offsetY, depth) {
+      offsetX = offsetX || 0;
+      offsetY = offsetY || 0;
+      depth = depth || 0;
+      const layout = node.getComputedLayout();
+      const x = layout.left + offsetX;
+      const y = layout.top + offsetY;
+      const w = layout.width;
+      const h = layout.height;
+      const r = node._borderRadius || 0;
+      const bg = node._backgroundColor;
+      const text = node._text;
+      const fontSize = node._fontSize;
+      const fontWeight = node._fontWeight || 'normal';
+      const textColor = node._color || (depth <= 1 ? '#000' : '#fff');
+      const borderWidth = node.getBorder ? node.getBorder(0) || 0 : 0;
+
+      // 绘制背景（支持圆角）
+      const colors = ['#e3f2fd', '#1e88e5', '#43a047', '#e53935', '#fb8c00', '#8e24aa'];
+      ctx.fillStyle = bg || colors[Math.min(depth, colors.length - 1)];
+      if (r > 0) {
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, r);
+        ctx.fill();
+      } else {
+        ctx.fillRect(x, y, w, h);
+      }
+
+      // 绘制边框
+      if (borderWidth > 0) {
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = borderWidth;
+        if (r > 0) {
+          ctx.beginPath();
+          ctx.roundRect(x, y, w, h, r);
+          ctx.stroke();
+        } else {
+          ctx.strokeRect(x, y, w, h);
+        }
+      } else {
+        ctx.strokeStyle = '#aaa';
+        ctx.lineWidth = depth === 0 ? 2 : 1;
+        if (r > 0) {
+          ctx.beginPath();
+          ctx.roundRect(x, y, w, h, r);
+          ctx.stroke();
+        } else {
+          ctx.strokeRect(x, y, w, h);
+        }
+      }
+
+      // 绘制文本
+      if (text) {
+        ctx.fillStyle = textColor;
+        ctx.font = fontWeight + ' ' + (fontSize || 14) + 'px sans-serif';
+        const lineH = Math.ceil((fontSize || 14) * 1.4);
+        const maxW = w - 12;
+        // 多行文本换行渲染
+        const words = text;
+        let line = '';
+        let lineY = y + (fontSize || 14) + 4;
+        for (let ci = 0; ci < words.length; ci++) {
+          const testLine = line + words[ci];
+          const metrics = ctx.measureText(testLine);
+          if (metrics.width > maxW && line.length > 0) {
+            ctx.fillText(line, x + 6, lineY, maxW);
+            line = words[ci];
+            lineY += lineH;
+          } else {
+            line = testLine;
+          }
+        }
+        if (line) ctx.fillText(line, x + 6, lineY, maxW);
+      } else if (w >= 60 && h >= 25) {
+        // 绘制尺寸标签
+        ctx.fillStyle = depth <= 1 ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)';
+        ctx.font = '10px monospace';
+        ctx.fillText(Math.round(w) + '×' + Math.round(h), x + 3, y + 11);
+      }
+
+      // 递归渲染子节点
+      const count = node.getChildCount();
+      for (let i = 0; i < count; i++) {
+        renderToCanvas(node.getChild(i), x, y, depth + 1);
+      }
+    }
+
+    // 执行测试
+    test();
+  </script>
+</body>
+</html>

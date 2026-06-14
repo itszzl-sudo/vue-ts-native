@@ -1,0 +1,59 @@
+{
+  "name": "vue-ts-native",
+  "version": "1.0.0",
+  "description": "Vue 原生渲染框架底座 - 脱离 DOM，基于 Skia + Yoga + Tauri，用户零学习成本",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "type": "module",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "require": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "ts-native build",
+    "dev": "ts-native dev",
+    "check": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx,.vue"
+  },
+  "peerDependencies": {
+    "vue": "^3.4.0"
+  },
+  "dependencies": {
+    "@vue/runtime-core": "^3.4.27",
+    "@vue/compiler-sfc": "^3.4.27",
+    "@vue/compiler-core": "^3.4.27",
+    "yoga-layout": "^2.0.1",
+    "skia-canvas": "^0.116.0",
+    "@tauri-apps/api": "^2.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0"
+  },
+  "keywords": [
+    "vue",
+    "native",
+    "skia",
+    "yoga",
+    "tauri",
+    "no-dom",
+    "framework",
+    "runtime"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/itszzl-sudo/vue-ts-native.git"
+  }
+}
