@@ -1,0 +1,48 @@
+{
+  "name": "vue-ts-native-react",
+  "version": "1.0.0",
+  "description": "React 适配层（Hooks 调度、组件生命周期、事件归一）",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "vue-ts-native-render": "file:../vue-ts-native-render",
+    "vue-ts-native-layout": "file:../vue-ts-native-layout",
+    "vue-ts-native-skia": "file:../vue-ts-native-skia",
+    "vue-ts-native-event": "file:../vue-ts-native-event"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  },
+  "keywords": [
+    "vue-ts-native",
+    "react",
+    "hooks",
+    "native-renderer"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/itszzl-sudo/vue-ts-native.git",
+    "directory": "packages/vue-ts-native-react"
+  }
+}

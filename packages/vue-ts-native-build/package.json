@@ -1,0 +1,29 @@
+{
+  "name": "vue-ts-native-build",
+  "version": "1.0.0",
+  "description": "vue-ts-native 构建工具（对接 ts-native AOT 编译）",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "vue-ts-native-build": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "esbuild": "^0.20.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  },
+  "keywords": [
+    "vue-ts-native",
+    "build",
+    "ts-native",
+    "aot"
+  ],
+  "author": "",
+  "license": "MIT"
+}

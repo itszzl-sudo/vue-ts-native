@@ -1,0 +1,42 @@
+{
+  "name": "vue-ts-native-core",
+  "version": "1.0.0",
+  "description": "ts-native API 封装（窗口、通知、剪贴板、消息框等）",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  },
+  "keywords": [
+    "vue-ts-native",
+    "ts-native",
+    "desktop",
+    "api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/itszzl-sudo/vue-ts-native.git",
+    "directory": "packages/vue-ts-native-core"
+  }
+}
